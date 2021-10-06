@@ -374,3 +374,195 @@ type Shape interface {
 
 인터페이스를 추가하고 테스트를 해보면 테스트가 통과하는 것을 볼 수 있습니다.
 
+> Go의 인터페이스
+
+Go의 인터페이스는 대부분의 다른 프로그래밍 언어의 인터페이스와는 상당히 다릅니다.
+
+다른 언어에서는 보통 `My Type Foo implements interface Bar` 라는 코드를 작성해야합니다.
+
+하지만 우리의 경우에는 해당 메서드가 있는 경우에만 인터페이스를 만족시킬 수 있습니다.
+
+- Rectangle은 Area 메서드를 호출하여 float64를 반환하므로 Shape 인터페이스를 만족시킵니다.
+
+- Circle은 Area 메서드를 호출하여 float64를 반환하므로 Shape 인터페이스를 만족시킵니다.
+
+- string은 해당하는 메서드가 없으므로 인터페이스를 만족하지 않습니다.
+
+Go에서 인터페이스 타입은 암시적입니다.
+
+전달하는 타입이 인터페이스가 요청하는 타입과 일치하면 컴파일 할 수 있습니다.
+
+> 디커플링(Decoupling)
+
+인터페이스가 그 도형이 Rectangle인지 Circle인지 Triangle의 도형인지에 대해 어떻게 신경쓸 필요가 없는지 주목합시다.
+
+인터페이스를 선언함으로써 구체적인 타입으로부터 분리되고 단지 해당 작업을 할 수 있는지(해당 타입에 명시된 메서드가 존재하는지)만 판단합니다.
+
+필요한 것만 선언하는 인터페이스를 사용하는 접근 방식은 소프트웨어 설계에서 매우 중요하며, 이후 섹션에서 자세히 설명하겠습니다.
+
+## 추가 리팩터링 하기
+
+이제 구조체에 대해 어느정도 이해했으므로 "테이블 기반 테스트"를 소개하겠습니다.
+
+https://github.com/golang/go/wiki/TableDrivenTests (테이블 기반 테스트)
+
+테이블 기반 테스트는 동일한 방법으로 테스트 할 수 있는 테스트 사례 목록을 작성하는 경우 유용합니다.
+
+``` go
+func TestArea(t *testing.T) {
+	areaTests := []struct {
+		shape Shape
+		want  float64
+	}{
+		{Rectangle{12, 6}, 72.0},
+		{Circle{10}, 314.1592653589793},
+	}
+	for _, tt := range areaTests {
+		got := tt.shape.Area()
+		if got != tt.want {
+			t.Errorf("got %g want %g", got, tt.want)
+		}
+	}
+}
+```
+
+여기서 새로운 구문이 하나있는데, 바로 익명구조체를 만드는 것입니다.
+
+익명구조체 areaTests는 shape와 want라는 두개의 필드가 존재하는 `[]struct`를 사용하여 구조체를 선언합니다.
+
+그런 다음 구조체 슬라이스를 테스트 케이스로 채웁니다.
+
+다른 슬라이스 처럼 테스트를 실행하기 위해 구조체 필드를 사용하여 반복합니다.
+
+개발자가 새로운 도형을 도입하고 Area를 구현한 후 테스트 케이스에 추가하는 것은 쉽습니다.
+
+게다가 만약 Area에 있는 버그가 발견된다면, 버그를 고치기 전에 새로운 테스트 케이스를 추가하여 테스트하는 것이 매우 쉽습니다.
+
+## 테스트부터 작성하기
+
+새로운 도형을 위한 테스트를 추가하는 것은 매우 쉽습니다.
+
+코드 `{Triangle{12, 6}, 36.0},`를 추가하기만 하면 됩니다.
+
+## 테스트 실행해보기
+
+테스트를 실행해봅시다.
+
+`./perimeter_test.go:22:4: undefined: Triangle`
+
+다음과 같이 에러가 발생합니다.
+
+### 컴파일이 되는 최소한의 코드를 작성하고, 테스트 실패 출력을 확인하기
+
+Triangle 타입을 정의해봅시다.
+
+``` go
+type Triangle struct {
+	Base   float64
+	Height float64
+}
+```
+
+다시 테스트를 해봅시다.
+
+```
+./perimeter_test.go:22:12: cannot use Triangle{...} (type Triangle) as type Shape in field value:
+        Triangle does not implement Shape (missing Area method)
+```
+
+Area 메서드가 Triangle에 없기때문에 Shape interface에서 도형으로 사용할 수 없음을 알려주고 있으므로 빈 메서드를 추가하여 테스트 해봅시다.
+
+```
+func (t Triangle) Area() float64 {
+	return 0
+}
+```
+
+테스트를 실행해보면 코드가 실행되지만 값이 틀려 FAIL이 발생합니다.
+
+```
+--- FAIL: TestArea (0.00s)
+    perimeter_test.go:27: got 0 want 36
+```
+
+## 테스트를 통과하는 최소한의 코드 작성하기
+
+```go
+func (t Triangle) Area() float64 {
+	return (t.Base * t.Height) * 0.5
+}
+```
+
+# 리팩터링 하기
+
+테스트 코드를 약간 개선해봅시다.
+
+익명 구조체에 값을 집어넣을 때 현재는 다음과 같이 집어 넣고 있습니다.
+
+``` go
+	{Rectangle{12, 6}, 72.0},
+	{Circle{10}, 314.1592653589793},
+	{Triangle{12, 6}, 36.0},
+```
+
+모든 숫자가 무엇을 나타내는지 바로 분명하지 않으며 쉽게 이해될수 있는 테스트를 목표로 만들어야 합니다.
+
+지금까지 `MyStruct{val1, val2}` 구조의 인스턴스를 생성하는 구문만 표시되었지만 선택적으로 필드 이름을 지정할 수 있습니다.
+
+다음과 같이 수정해봅시다.
+
+```go
+		{shape: Rectangle{12, 6}, want: 72.0},
+		{shape: Circle{10}, want: 314.1592653589793},
+		{shape: Triangle{12, 6}, want: 36.0},
+```
+
+각 필드가 어떤 역할인지 좀 더 보기 쉬워졌습니다.
+
+## 테스트 출력이 유용한지 확인하기
+
+아까 Triangle을 실행하다가 실패한 테스트에서 `perimeter_test.go:27: got 0 want 36` 와 같이 출력 됐었습니다.
+
+그때는  Triangle을 가지고 작업하고 있기 때문에 Triangle과 관련 있다는 것을 알 수 있었습니다.
+
+하지만 테이블에 있는 20가지 테스트 케이스 중 하나에서 버그가 발생한다면 어떤 경우에 실패했는지 개발자가 어떻게 알 수 있을까요?
+
+먼저, 실제로 실폐한 테스트 케이스를 찾기 위해 어떤 케이스에서 실패했는지 확인해야 합니다.
+
+오류 메시지를 `%#v got %g want %g`로 변경해봅시다.
+
+`%#v` 형식 문자열은 필드 값이 있는 구조를 출력하여 개발자가 테스트 중인 속성을 한눈에 볼 수 있도록 합니다.
+
+테스트 사례의 가독성을 높이기 위해 want 필드를 hasArea와 같이 좀 더 의미있는 이름으로 바꿀 수 있습니다.
+
+테이블 기반 테스트의 마지막 팁은 t.Run을 사용하고 테스트 케이스 이름을 지정하는 것입니다.
+
+각각의 케이스를 t.Run으로 실행하면 케이스 이름을 출력하기 때문에 실패시 테스트 출력이 명확해집니다.
+
+또한 go test -run TestArea/Rectangle 과 같이 사용하여 특정 테스트만 실행할 수도 있습니다.
+
+위의 팁들을 적용하여 작성하면 최종적으로 다음과 같은 코드를 작성할 수 있습니다.
+
+``` go
+func TestArea(t *testing.T) {
+	areaTests := []struct {
+		name    string
+		shape   Shape
+		hasArea float64
+	}{
+		{name: "Rectangle", shape: Rectangle{12, 6}, hasArea: 72.0},
+		{name: "Circle", shape: Circle{10}, hasArea: 314.1592653589793},
+		{name: "Triangle", shape: Triangle{12, 6}, hasArea: 36.0},
+	}
+	for _, tt := range areaTests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.shape.Area()
+			if got != tt.hasArea {
+				t.Errorf("got %g want %g", got, tt.hasArea)
+			}
+		})
+	}
+}
+```
+
+
